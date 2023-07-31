@@ -56,12 +56,12 @@ def addAlbumArtToMP3(songPath, imagePath, imageMimeType):
         f"Adding {imageMimeType} album art to MP3 file {songPath}: {imagePath}"
     )
 
-    songFile = ID3("music_file.mp3")
+    songFile = ID3(songPath)
 
-    with open("img.jpg", "rb") as albumart:
+    with open(imagePath, "rb") as imageFile:
         # Encoding = 3 is Encoding.UTF8, type = 3 is PictureType.COVER_FRONT
         songFile["APIC"] = APIC(
-            encoding=3, mime=imageMimeType, type=3, desc="Cover", data=albumart.read()
+            encoding=3, mime=imageMimeType, type=3, desc="Cover", data=imageFile.read()
         )
 
     songFile.save()
