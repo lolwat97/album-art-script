@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# For parsing the commandline arguements
+# For parsing the commandline arguments
 import argparse
 
 # System file handling stuff
@@ -31,7 +31,7 @@ import base64
 from logger import applogger
 
 
-COMMON_ART_NAMES = ["cover.jpg", "cover.png", "folder.jpg", "folder.png"]
+COMMON_ART_NAMES = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "Cover.jpg", 'Cover.png', "Folder.jpg", "Folder.png", "album_art.jpg", "album_art.png"]
 MIME_TYPES = {"jpg": "image/jpg", "png": "image/png"}
 
 
@@ -120,17 +120,31 @@ def addAlbumArtToOGG(songPath, imagePath, imageMimeType):
 def checkExistingAlbumArt(songPath):
     applogger.debug(f"Opening {songPath} with Mutagen...")
     song = MutagenFile(songPath)
-    # For MP3 files
+    # For MP3 files TODO: This doesn't work for some reason, pls fix
+    # album-art-script - DEBUG - Track full path is /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:167)
+    # album-art-script - DEBUG - Track dir is /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2 (album-art-script.py:168)
+    # album-art-script - DEBUG - Opening /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 with Mutagen... (album-art-script.py:121)
+    # album-art-script - DEBUG - Album art not found inside track /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:135)
+    # album-art-script - DEBUG - Checking for usual album art filenames (album-art-script.py:151)
+    # album-art-script - DEBUG - Checking if /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.jpg exists... (album-art-script.py:154)
+    # album-art-script - DEBUG - Checking if /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png exists... (album-art-script.py:154)
+    # album-art-script - DEBUG - Found it! /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png (album-art-script.py:156)
+    # album-art-script - DEBUG - Seems like /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png exists, file ext is "png" (album-art-script.py:196)
+    # album-art-script - DEBUG - Image file MIME type is image/png (album-art-script.py:203)
+    # album-art-script - INFO - Adding album art to: /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:209)
+    # album-art-script - DEBUG - Adding image/png album art to MP3 file /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3: /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png (album-art-script.py:55)
+
     if "APIC:" in song:
         return True
 
-    # For OGG files
+    # For OGG files TODO: Test if at least this works ffs
     if "metadata_block_picture" in song:
         return True
 
-    # For OPUS files
-    if hasattr(song, "pictures") and song.pictures:
-        return True
+    # TODO: OPUS?
+    # # For OPUS files
+    # if hasattr(song, "pictures") and song.pictures:
+    #     return True
 
     applogger.debug(f"Album art not found inside track {songPath}")
     return False
@@ -141,6 +155,8 @@ def parseArguments():
     argparser.add_argument("filename")
     argparser.add_argument("--edit-all", "-a", action="store_true")
     argparser.add_argument("--copy-cover", "-c", action="store_true")
+    argparser.add_argument("--delete-original-cover", action="store_true") # TODO: Implement this
+    argparser.add_argument("--recursive", "-r", action="store_true") # TODO: implement recursive file processing
     args = argparser.parse_args()
     return args
 
@@ -157,7 +173,7 @@ def checkForCommonAlbumArtNames(songPath, albumArtNames=COMMON_ART_NAMES):
     return None, False
 
 
-def app():
+def runSingleFile():
     args = parseArguments()
 
     songPath = args.filename
@@ -183,7 +199,7 @@ def app():
             imagePath = tkFileDialog.askopenfilename(initialdir=songDir)
             applogger.debug(f"Got {imagePath} from the user.")
 
-        if imagePath is None:
+        if imagePath == ():
             applogger.error(f"No art selected for {songPath}, exiting...")
             return -1
         if not fileExists(imagePath):
@@ -221,4 +237,4 @@ def app():
         return 0
 
 
-app()
+runSingleFile()
