@@ -4,7 +4,7 @@ import sys
 import logging
 
 
-class LoggingFormatter(logging.Formatter):
+class TerminalLoggingFormatter(logging.Formatter):
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"
     red = "\x1b[31;20m"
@@ -26,12 +26,38 @@ class LoggingFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+class FileLoggingFormatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "%(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+
+    FORMATS = {
+        logging.DEBUG: format,
+        logging.INFO: format,
+        logging.WARNING: format,
+        logging.ERROR: format,
+        logging.CRITICAL: format,
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+
 applogger = logging.getLogger("album-art-script")
 applogger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
-ch.setFormatter(LoggingFormatter())
+ch.setFormatter(TerminalLoggingFormatter())
+fh = logging.FileHandler("album-art-script.log")
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(FileLoggingFormatter())
 applogger.addHandler(ch)
+applogger.addHandler(fh)
 
 
 def logUnhandledException(excType, excValue, excTrace):

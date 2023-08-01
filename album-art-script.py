@@ -21,17 +21,21 @@ from tkinter import filedialog as tkFileDialog
 # Tag manipulating magic lib
 from mutagen import File as MutagenFile
 from mutagen.id3 import APIC, ID3
+from mutagen.id3._util import ID3NoHeaderError
 from mutagen.oggvorbis import OggVorbis
-from mutagen.flac import FLAC
+
+# from mutagen.flac import FLAC
 from mutagen.flac import Picture as MutagenFLACPicture
 
 # Needed for ogg album art
 import base64
 
+# For album art resizing
 from PIL import Image as PILImage
 
 # Logging setup has been offloaded to a separate module, logger.py
 # applogger is the logger to call, defined in logger.py
+import logging
 from logger import applogger
 
 
@@ -39,6 +43,7 @@ COMMON_ART_NAME_MAIN = [
     "cover",
     "Cover",
     "COVER",
+    "cover0",
     "folder",
     "Folder",
     "FOLDER",
@@ -55,7 +60,7 @@ COMMON_ART_NAMES = [
     ".".join(combo)
     for combo in itertools.product(COMMON_ART_NAME_MAIN, COMMON_ART_NAME_EXT)
 ]
-MIME_TYPES = {"jpg": "image/jpg", "png": "image/png"}
+MIME_TYPES = {"jpg": "image/jpg", "png": "image/png", "jpeg": "image/jpg"}
 DEFAULT_RESIZE_DIM = 1024
 DEFAULT_SAVE_NAME = "cover"
 DEFAULT_RESIZED_SAVE_NAME = "cover_resized"
@@ -145,41 +150,44 @@ def addAlbumArtToOGG(songPath, imagePath, imageMimeType):
 
 
 def checkExistingAlbumArt(songPath):
-    applogger.debug(f"Opening {songPath} with Mutagen...")
-    song = MutagenFile(songPath)
-    # For MP3 files TODO: This doesn't work for some reason, pls fix
-    # album-art-script - DEBUG - Track full path is /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:167)
-    # album-art-script - DEBUG - Track dir is /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2 (album-art-script.py:168)
-    # album-art-script - DEBUG - Opening /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 with Mutagen... (album-art-script.py:121)
-    # album-art-script - DEBUG - Album art not found inside track /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:135)
-    # album-art-script - DEBUG - Checking for usual album art filenames (album-art-script.py:151)
-    # album-art-script - DEBUG - Checking if /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.jpg exists... (album-art-script.py:154)
-    # album-art-script - DEBUG - Checking if /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png exists... (album-art-script.py:154)
-    # album-art-script - DEBUG - Found it! /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png (album-art-script.py:156)
-    # album-art-script - DEBUG - Seems like /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png exists, file ext is "png" (album-art-script.py:196)
-    # album-art-script - DEBUG - Image file MIME type is image/png (album-art-script.py:203)
-    # album-art-script - INFO - Adding album art to: /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3 (album-art-script.py:209)
-    # album-art-script - DEBUG - Adding image/png album art to MP3 file /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/10 Caramell - Caramelldansen (speedycake).mp3: /home/lw/Music/music_ogg/2ch ost/Vol 1/CD2/cover.png (album-art-script.py:55)
-
-    if "APIC:" in song:
-        return True
-
-    # For OGG files TODO: Test if at least this works ffs
-    if "metadata_block_picture" in song:
-        return True
-
-    # TODO: OPUS?
-    # # For OPUS files
-    # if hasattr(song, "pictures") and song.pictures:
-    #     return True
-
+    applogger.debug(f"Checking for existing album art in {songPath}")
+    songExt = fileExtension(songPath)[1].lower().strip(".")
+    if songExt == "mp3":
+        return checkExistingAlbumArtMP3(songPath)
+    elif songExt == "ogg":
+        return checkExistingAlbumArtOGG(songPath)
     applogger.debug(f"Album art not found inside track {songPath}")
     return False
+
+
+def checkExistingAlbumArtOGG(songPath):
+    songFile = MutagenFile(songPath)
+    if "metadata_block_picture" in songFile:
+        applogger.debug(f"Album art found inside OGG track {songPath}!")
+        return True
+    applogger.debug(f"Album art not found inside OGG track {songPath}")
+    return False
+
+
+def checkExistingAlbumArtMP3(songPath):
+    try:
+        audio = ID3(songPath)
+        for key in audio.keys():
+            if key.startswith("APIC:"):
+                applogger.debug(f"Album art found inside MP3 track {songPath}!")
+                return True
+        applogger.debug(f"Album art not found inside MP3 track {songPath}")
+        return False
+    except ID3NoHeaderError:
+        applogger.warning(f"No ID3 tags at all in file {songPath}")
+        return False
 
 
 def parseArguments():
     argparser = argparse.ArgumentParser()
     argparser.add_argument("filename")
+    argparser.add_argument("--verbose", "-v", action="store_true")
+    argparser.add_argument("--very-verbose", "-vv", action="store_true")
     argparser.add_argument("--edit-all", "-a", action="store_true")
     argparser.add_argument("--copy-cover", "-c", action="store_true")
     argparser.add_argument("--copy-cover-name", default=DEFAULT_SAVE_NAME)
@@ -190,6 +198,9 @@ def parseArguments():
     )
     argparser.add_argument("--cover-resize-name", default=DEFAULT_RESIZED_SAVE_NAME)
     argparser.add_argument(
+        "--textlog", action="store_true"
+    )  # TODO: This doesn't affect file logging right now, fix
+    argparser.add_argument(
         "--delete-original-cover", action="store_true"
     )  # TODO: Implement this
     argparser.add_argument(
@@ -197,9 +208,19 @@ def parseArguments():
     )  # TODO: implement recursive file processing
     args = argparser.parse_args()
     applogger.debug(f"Arguments are {args}")
+
     if args.max_cover_size and not args.copy_cover:
         applogger.error("--max-cover-size is only possible with --copy-cover!")
         return None
+
+    if args.verbose:
+        applogger.setLevel(logging.INFO)
+    elif args.very_verbose:
+        applogger.setLevel(logging.DEBUG)
+
+    if args.textlog:
+        applogger
+
     return args
 
 
@@ -220,6 +241,7 @@ def checkForCommonAlbumArtNames(
     resizedName = f"{resizedName}.{saveExt}"
     applogger.debug(f"Adding a resized image to check for: {resizedName}")
     albumArtNames.insert(0, resizedName)
+    # albumArtNames now should be [resizedName, defaultName, (all generated names, see COMMON_ART_NAMES)]
     for commonName in albumArtNames:
         possibleName = join(dirname(songPath), commonName)
         applogger.debug(f"Checking if {possibleName} exists...")
@@ -240,7 +262,27 @@ def resizeImageAndSave(
     image = PILImage.open(imagePath)
     image.thumbnail((resizeDim, resizeDim))
     fileName = join(saveDir, f"{resizeName}.{resizeExt}")
-    image.save(fileName)
+    applogger.debug("Trying to save the resized image...")
+    try:
+        image.save(fileName)
+    # This is actually a KeyError that causes OSError
+    except OSError as e:
+        # This is probably because some art has transparency in it, and we're saving as JPG
+        # Solution is: convert to without-transparency format
+        # TODO: see how it converts, does it represent alpha as white?
+        # if not, that's kinda shitty lol
+        applogger.debug(f"Image mode is {image.mode}")
+        if image.mode in ("RGBA", "P"):
+            applogger.debug(
+                "Image move is with transparency, trying to convert to RGB and save..."
+            )
+            image = image.convert("RGB")
+            image.save(fileName)
+        else:
+            # If not alpha, that's something different, throw an error out
+            applogger.error(
+                f"Unhandled exception occured while saving the resized album art: {e}"
+            )
     applogger.debug(f"Resized {imagePath} to {image.size} and saved as {fileName}.")
     return fileName
 
@@ -298,6 +340,7 @@ def runSingleFile():
             applogger.debug(f"Image file MIME type is {imageMimeType}")
 
         if args.max_cover_size is not None:
+            # Get size in MB, since the commandline parameter is in MB
             coverSize = getsize(imagePath) / 1024 / 1024
             applogger.debug(
                 f"MAX_COVER_SIZE is set to {args.max_cover_size} MB, file size is {coverSize} MB"
@@ -319,6 +362,13 @@ def runSingleFile():
                 applogger.debug(
                     "Cover is within the specified size, continuing as normal..."
                 )
+                if not commonNameFoundFlag:
+                    applogger.info(
+                        f"Copying {imagePath} to track dir as cover.{imageExt}"
+                    )
+                    copyFile(
+                        imagePath, join(songDir, f"{args.copy_cover_name}.{imageExt}")
+                    )
         elif args.copy_cover and not commonNameFoundFlag:
             applogger.info(f"Copying {imagePath} to track dir as cover.{imageExt}")
             copyFile(imagePath, join(songDir, f"{args.copy_cover_name}.{imageExt}"))
