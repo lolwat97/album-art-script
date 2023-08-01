@@ -6,6 +6,10 @@ Work is still in progress.
 This script implies that you have all albums stored in separate directores, one album in a dir.
 ogg vorbis and mp3 files for now
 
+## TEST
+- Check resize function with PNG
+- Check resize function with non-standard names
+
 ## TODO
 - Fix existing art detection for MP3 files
 - Different writings of default names (like cover.JPG - stuff like that) (also add jacker.ext)

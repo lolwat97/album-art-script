@@ -3,8 +3,10 @@
 # For parsing the commandline arguments
 import argparse
 
+import itertools
+
 # System file handling stuff
-from os.path import dirname, join
+from os.path import dirname, join, getsize
 from os.path import exists as fileExists
 from os.path import splitext as fileExtension
 
@@ -26,13 +28,38 @@ from mutagen.flac import Picture as MutagenFLACPicture
 # Needed for ogg album art
 import base64
 
+from PIL import Image as PILImage
+
 # Logging setup has been offloaded to a separate module, logger.py
 # applogger is the logger to call, defined in logger.py
 from logger import applogger
 
 
-COMMON_ART_NAMES = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "Cover.jpg", 'Cover.png', "Folder.jpg", "Folder.png", "album_art.jpg", "album_art.png"]
+COMMON_ART_NAME_MAIN = [
+    "cover",
+    "Cover",
+    "COVER",
+    "folder",
+    "Folder",
+    "FOLDER",
+    "album_art",
+    "Album_art",
+    "ALBUM_ART",
+    "albumart",
+    "Albumart",
+    "AlbumArt",
+    "ALBUMART",
+]
+COMMON_ART_NAME_EXT = ["jpg", "Jpg", "jpeg", "Jpeg", "JPG", "JPEG", "png", "Png", "PNG"]
+COMMON_ART_NAMES = [
+    ".".join(combo)
+    for combo in itertools.product(COMMON_ART_NAME_MAIN, COMMON_ART_NAME_EXT)
+]
 MIME_TYPES = {"jpg": "image/jpg", "png": "image/png"}
+DEFAULT_RESIZE_DIM = 1024
+DEFAULT_SAVE_NAME = "cover"
+DEFAULT_RESIZED_SAVE_NAME = "cover_resized"
+DEFAULT_SAVE_EXT = "jpg"
 
 
 def addAlbumArtToSong(songPath, imagePath, imageMimeType):
@@ -155,14 +182,44 @@ def parseArguments():
     argparser.add_argument("filename")
     argparser.add_argument("--edit-all", "-a", action="store_true")
     argparser.add_argument("--copy-cover", "-c", action="store_true")
-    argparser.add_argument("--delete-original-cover", action="store_true") # TODO: Implement this
-    argparser.add_argument("--recursive", "-r", action="store_true") # TODO: implement recursive file processing
+    argparser.add_argument("--copy-cover-name", default=DEFAULT_SAVE_NAME)
+    argparser.add_argument("--cover-save-extension", default=DEFAULT_SAVE_EXT)
+    argparser.add_argument("--max-cover-size", "-s", type=float)
+    argparser.add_argument(
+        "--cover-resize-dimensions", type=int, default=DEFAULT_RESIZE_DIM
+    )
+    argparser.add_argument("--cover-resize-name", default=DEFAULT_RESIZED_SAVE_NAME)
+    argparser.add_argument(
+        "--delete-original-cover", action="store_true"
+    )  # TODO: Implement this
+    argparser.add_argument(
+        "--recursive", "-r", action="store_true"
+    )  # TODO: implement recursive file processing
     args = argparser.parse_args()
+    applogger.debug(f"Arguments are {args}")
+    if args.max_cover_size and not args.copy_cover:
+        applogger.error("--max-cover-size is only possible with --copy-cover!")
+        return None
     return args
 
 
-def checkForCommonAlbumArtNames(songPath, albumArtNames=COMMON_ART_NAMES):
+def checkForCommonAlbumArtNames(
+    songPath,
+    albumArtNames=COMMON_ART_NAMES,
+    saveName=DEFAULT_SAVE_NAME,
+    resizedName=DEFAULT_RESIZED_SAVE_NAME,
+    saveExt=DEFAULT_SAVE_EXT,
+):
     applogger.debug("Checking for usual album art filenames")
+    # TODO: this doesn't check if the cover file has been copied with the default name, but non-default extension
+    # but fuck it, we ball
+    defaultName = f"{saveName}.{saveExt}"
+    applogger.debug(f"Adding a default image to check for: {defaultName}")
+    albumArtNames.insert(0, defaultName)
+    # Resized image to be checked first, since we do want the resized image to be added instead of a fucking 50 meg file
+    resizedName = f"{resizedName}.{saveExt}"
+    applogger.debug(f"Adding a resized image to check for: {resizedName}")
+    albumArtNames.insert(0, resizedName)
     for commonName in albumArtNames:
         possibleName = join(dirname(songPath), commonName)
         applogger.debug(f"Checking if {possibleName} exists...")
@@ -173,8 +230,26 @@ def checkForCommonAlbumArtNames(songPath, albumArtNames=COMMON_ART_NAMES):
     return None, False
 
 
+def resizeImageAndSave(
+    imagePath,
+    saveDir,
+    resizeDim=DEFAULT_RESIZE_DIM,
+    resizeName=DEFAULT_RESIZED_SAVE_NAME,
+    resizeExt=DEFAULT_SAVE_EXT,
+):
+    image = PILImage.open(imagePath)
+    image.thumbnail((resizeDim, resizeDim))
+    fileName = join(saveDir, f"{resizeName}.{resizeExt}")
+    image.save(fileName)
+    applogger.debug(f"Resized {imagePath} to {image.size} and saved as {fileName}.")
+    return fileName
+
+
 def runSingleFile():
     args = parseArguments()
+    if args is None:
+        applogger.error("Invalid arguments, exiting...")
+        return -1
 
     songPath = args.filename
     songDir = dirname(songPath)
@@ -188,7 +263,13 @@ def runSingleFile():
     albumArtExistsInTrack = checkExistingAlbumArt(songPath)
 
     if (not albumArtExistsInTrack) or args.edit_all:
-        imagePath, commonNameFoundFlag = checkForCommonAlbumArtNames(songPath)
+        imagePath, commonNameFoundFlag = checkForCommonAlbumArtNames(
+            songPath,
+            COMMON_ART_NAMES,
+            args.copy_cover_name,
+            args.cover_resize_name,
+            args.cover_save_extension,
+        )
         if imagePath is None:
             applogger.warning(
                 f"Art for {songPath} not found automatically, calling tkFileDialog..."
@@ -216,9 +297,31 @@ def runSingleFile():
             imageMimeType = MIME_TYPES[imageExt]
             applogger.debug(f"Image file MIME type is {imageMimeType}")
 
-        if args.copy_cover and not commonNameFoundFlag:
+        if args.max_cover_size is not None:
+            coverSize = getsize(imagePath) / 1024 / 1024
+            applogger.debug(
+                f"MAX_COVER_SIZE is set to {args.max_cover_size} MB, file size is {coverSize} MB"
+            )
+            if coverSize > args.max_cover_size:
+                applogger.info(
+                    "Cover is bigger than the size specified, shrinking it down and saving as cover.jpg..."
+                )
+                imagePath = resizeImageAndSave(
+                    imagePath,
+                    songDir,
+                    args.cover_resize_dimensions,
+                    args.cover_resize_name,
+                    args.cover_save_extension,
+                )
+                imageExt = args.cover_save_extension
+                imageMimeType = MIME_TYPES[imageExt]
+            else:
+                applogger.debug(
+                    "Cover is within the specified size, continuing as normal..."
+                )
+        elif args.copy_cover and not commonNameFoundFlag:
             applogger.info(f"Copying {imagePath} to track dir as cover.{imageExt}")
-            copyFile(imagePath, join(songDir, f"cover.{imageExt}"))
+            copyFile(imagePath, join(songDir, f"{args.copy_cover_name}.{imageExt}"))
 
         applogger.info(
             f"Adding album art to: {songPath}"
