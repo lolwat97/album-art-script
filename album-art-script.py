@@ -200,6 +200,7 @@ def parseArguments():
     argparser.add_argument(
         "--textlog", action="store_true"
     )  # TODO: This doesn't affect file logging right now, fix
+    argparser.add_argument("--force-resave", action="store_true")
     argparser.add_argument(
         "--delete-original-cover", action="store_true"
     )  # TODO: Implement this
@@ -211,6 +212,10 @@ def parseArguments():
 
     if args.max_cover_size and not args.copy_cover:
         applogger.error("--max-cover-size is only possible with --copy-cover!")
+        return None
+
+    if args.force_resave and not args.copy_cover:
+        applogger.error("--force-resave only possible with --copy-cover!")
         return None
 
     if args.verbose:
@@ -339,7 +344,7 @@ def runSingleFile():
             imageMimeType = MIME_TYPES[imageExt]
             applogger.debug(f"Image file MIME type is {imageMimeType}")
 
-        if args.max_cover_size is not None:
+        if args.max_cover_size is not None or args.force_resave:
             # Get size in MB, since the commandline parameter is in MB
             coverSize = getsize(imagePath) / 1024 / 1024
             applogger.debug(
